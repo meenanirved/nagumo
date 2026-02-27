@@ -1,24 +1,39 @@
-name: MacRDP
+name: MacRDP-Native
 on: 
   workflow_dispatch:
+
 jobs:
   build:
     name: MacRDP
     runs-on: macos-latest
     
-    steps:                 
-    - name: Enabling Remote Access
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Install RDP Server (xrdp)
+      run: |
+        brew install xrdp
+        # Configure xrdp to listen on the standard RDP port 3389
+        sudo xrdp-sesman
+        sudo xrdp
+
+    - name: Create Tunnel for RDP
       env:
         NGROK_AUTH_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
       run: |
-          curl -s -o start.sh -L "https://raw.githubusercontent.com/JohnnyNetsec/github-vm/main/mac/start.sh"
-          chmod +x start.sh
-          bash start.sh "$NGROK_AUTH_TOKEN"
-          
-    - name: Log In Details To VNC Server
-      run: |
-         chmod +x login.sh
-         bash login.sh
-         
-    - name: MacOS System running...
-      uses: mxschmitt/action-tmate@v2
+        # Install ngrok via Homebrew for reliability
+        brew install --cask ngrok
+        ngrok config add-authtoken $NGROK_AUTH_TOKEN
+        
+        # Start ngrok tunnel on RDP port 3389
+        # Running in background so the workflow continues
+        nohup ngrok tcp 3389 --log=stdout > ngrok.log &
+        
+        # Give it a moment to initialize and print the URL
+        sleep 10
+        curl -s http://localhost:4040/api/tunnels | jq -r '.tunnels[0].public_url'
+
+    - name: Keep Alive with tmate
+      uses: mxschmitt/action-tmate@v3
+      # This keeps the VM running so the tunnel doesn't close immediately
